@@ -1,0 +1,338 @@
+// Delicious Sheri — Database Schema
+// Dev default: SQLite (zero setup). For production, switch provider to "postgresql"
+// and point DATABASE_URL at your Postgres instance (Railway / Render / Supabase / RDS).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String   @unique
+  password  String
+  phone     String?
+  address   String?
+  city      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  orders    Order[]
+}
+
+model AdminUser {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  username  String   @unique
+  password  String
+  role      String   @default("admin") // admin | superadmin
+  createdAt DateTime @default(now())
+}
+
+model Category {
+  id       String    @id @default(auto()) @map("_id") @db.ObjectId
+  name     String    @unique
+  slug     String    @unique
+  products Product[]
+}
+
+model Product {
+  id           String      @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  slug         String      @unique
+  description  String
+  price        Float // customer-facing selling price
+  costPrice    Float? // wholesale cost from vendor — only set for third-party marketplace items
+  compareAt    Float? // optional "was" price for discounts
+  imageUrl     String
+  gallery      String? // JSON-stringified array of extra image URLs
+  videoUrl     String? // optional product video (base64 data URL — same storage note as CNIC uploads)
+  category     Category?   @relation(fields: [categoryId], references: [id])
+  categoryId   String?     @db.ObjectId
+  brandType    String      @default("bakery") // "bakery" (Delicious Sheri) | "general" (third-party marketplace)
+  vendor       Vendor?     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendorId     String?     @db.ObjectId
+  stock        Int         @default(0)
+  isActive     Boolean     @default(true)
+  isFeatured   Boolean     @default(false)
+  isReturnable Boolean     @default(false) // fresh/soft sweets default to non-returnable
+  weightGrams  Int? // e.g. 500g box — also used for cargo weight-based shipping calc
+  externalSku  String? // third-party's own SKU/ID — used to match incoming price-update webhooks
+  marginAmount Float? // admin's FIXED profit margin (currency units, not %) for dropshipped items.
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  orderItems   OrderItem[]
+}
+
+model Order {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  orderNumber String   @unique
+  user        User?    @relation(fields: [userId], references: [id])
+  userId      String?  @db.ObjectId
+  guestName   String?
+  guestEmail  String?
+  guestPhone  String?
+
+  shippingAddress String // full free-text address (house #, landmark, etc.)
+  city            String // city/town/village name, free text
+  area            String? // mohalla / neighborhood / sector
+  street          String? // gali / street
+  isRural         Boolean @default(false) // customer-flagged: village/dehat address, no formal street grid
+
+  items         OrderItem[]
+  subtotal      Float
+  deliveryFee   Float       @default(0)
+  discount      Float       @default(0)
+  total         Float
+  paymentMethod String // visa | debit_card | easypaisa | jazzcash | sadapay | cod
+  paymentStatus String      @default("pending") // pending | paid | failed | refunded
+  paymentRef    String? // gateway transaction reference
+  orderStatus   String      @default("received") // received | preparing | out_for_delivery | delivered | cancelled
+  brandType     String      @default("bakery") // set from the order's items at checkout — themes the Rider Portal
+
+  shippingMethod     String  @default("local_rider") // local_rider | courier — decided at checkout from vendor city vs order city
+  courierName        String? // e.g. TCS, Leopards, Trax
+  courierTrackingId  String?
+  courierStatus      String? // booked | in_transit | delivered
+  courierTrackingUrl String?
+  cargoFee           Float   @default(0) // weight-based fee for courier shipments
+
+  rider                  Rider?              @relation(fields: [riderId], references: [id])
+  riderId                String?             @db.ObjectId
+  riderArrivedAt         DateTime?
+  doorstepProofUrl       String? // unboxing photo/video captured at doorstep
+  deliveryConfirmedAt    DateTime?
+  returnLocked           Boolean             @default(false) // set true the moment rider confirms delivery — permanent
+  wasRejectedAtDoorstep  Boolean             @default(false)
+  deliveryCode           String // 4-digit code the customer gives the rider at the door
+  deliveryCodeVerifiedAt DateTime?
+  deliveryCodeResendCount Int                @default(0)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  cryptoTransactions     CryptoTransaction[]
+  thirdPartyOrders       ThirdPartyOrder[]
+}
+
+model OrderItem {
+  id           String  @id @default(auto()) @map("_id") @db.ObjectId
+  order        Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId      String  @db.ObjectId
+  product      Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId    String  @db.ObjectId
+  name         String
+  price        Float
+  quantity     Int
+  isReturnable Boolean @default(false) // copied from Product at order time — policy can't change retroactively
+  brandType    String  @default("bakery")
+}
+
+model Banner {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  title     String
+  subtitle  String?
+  ctaLabel  String? // e.g. "Shop Now"
+  ctaLink   String? // e.g. "/shop"
+  emoji     String   @default("🎉") // placeholder visual; swap for a real imageUrl field if hosting images
+  imageUrl  String?
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Vendor {
+  id               String    @id @default(auto()) @map("_id") @db.ObjectId
+  name             String
+  city             String // used to detect same-city vs cross-city shipping
+  settlementMode   String    @default("cash") // cash | khata
+  ledgerBalance    Float     @default(0) // what we owe them (khata mode)
+  cashFloatBalance Float     @default(0) // rider's cash float against this vendor (cash mode)
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  products         Product[]
+
+  logoUrl                  String? // vendor/brand logo shown next to their products & records
+  apiKey                   String? // key WE issue to this vendor so their systems can call our price-update webhook
+  webhookUrl               String? // THEIR endpoint — we POST order/shipping details here on checkout
+  stripeConnectedAccountId String? // Stripe Connect account id — enables automated split payments (needs a real Stripe account)
+  payoutEmail              String? // fallback payout contact if not using Stripe Connect
+  thirdPartyOrders         ThirdPartyOrder[]
+  importedItems            VendorImportItem[]
+}
+
+model VendorImportItem {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  vendor      Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendorId    String   @db.ObjectId
+  externalSku String
+  name        String
+  imageUrl    String?
+  costPrice   Float
+  status      String   @default("fetched") // fetched | imported
+  productId   String?  @db.ObjectId // set once imported into the real Product catalog
+  createdAt   DateTime @default(now())
+}
+
+model ThirdPartyOrder {
+  id       String @id @default(auto()) @map("_id") @db.ObjectId
+  order    Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId  String @db.ObjectId
+  vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendorId String @db.ObjectId
+
+  costTotal        Float // what's owed to the vendor for this vendor's items in the order
+  marginTotal      Float // what the platform keeps
+  splitStatus      String  @default("pending") // pending | completed | failed | manual
+  stripeTransferId String? // set once a real Stripe Connect transfer is made
+
+  vendorNotifiedAt   DateTime?
+  vendorNotifyStatus String    @default("pending") // pending | sent | failed
+  trackingId         String?
+  courierName        String?
+  dispatchStatus     String    @default("pending") // pending | dispatched | delivered
+
+  disputeStatus String  @default("none") // none | open | resolved
+  disputeNotes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Wallet {
+  id           String              @id @default(auto()) @map("_id") @db.ObjectId
+  ownerType    String // "customer" | "rider"
+  ownerId      String // User.id or Rider.id depending on ownerType
+  balance      Float               @default(0)
+  createdAt    DateTime            @default(now())
+  transactions WalletTransaction[]
+
+  @@unique([ownerType, ownerId])
+}
+
+model WalletTransaction {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  wallet    Wallet   @relation(fields: [walletId], references: [id])
+  walletId  String   @db.ObjectId
+  amount    Float // positive = credit, negative = debit
+  reason    String
+  orderId   String?  @db.ObjectId
+  createdAt DateTime @default(now())
+}
+
+model RiderUpdateRequest {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  rider          Rider    @relation(fields: [riderId], references: [id])
+  riderId        String   @db.ObjectId
+  field          String // e.g. "bikeNumber"
+  currentValue   String?
+  requestedValue String
+  status         String   @default("pending") // pending | approved | rejected
+  createdAt      DateTime @default(now())
+}
+
+model PaymentMethodConfig {
+  id            String  @id @default(auto()) @map("_id") @db.ObjectId
+  method        String  @unique // visa | mastercard | easypaisa | jazzcash | sadapay | paypal | payoneer | bitcoin | or any custom wallet slug
+  displayName   String? // Custom display name for global wallets (e.g., "NayaPay", "Binance Pay", "M-Pesa")
+  isEnabled     Boolean @default(false)
+  isCustom      Boolean @default(false) // true if added dynamically from admin panel
+  accountTitle  String?
+  accountNumber String? // IBAN / account number / PayPal email / Payoneer email, depending on method
+  walletAddress String? // BTC wallet address / Crypto Wallet
+  qrImageUrl    String? // base64 QR code image
+
+  merchantId String?
+  storeId    String?
+  hashKey    String?
+  apiKey     String?
+  secretKey  String?
+
+  updatedAt DateTime @updatedAt
+}
+
+model CryptoTransaction {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  order        Order    @relation(fields: [orderId], references: [id])
+  orderId      String   @db.ObjectId
+  customerName String
+  amount       Float
+  txHash       String
+  status       String   @default("pending") // pending | verified | rejected
+  createdAt    DateTime @default(now())
+}
+
+model Payout {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  amount            Float
+  bankAccountTitle  String
+  bankAccountNumber String
+  status            String   @default("pending") // pending | completed | failed
+  note              String?
+  createdAt         DateTime @default(now())
+}
+
+model PlatformSetting {
+  id             String @id @default(auto()) @map("_id") @db.ObjectId
+  assignmentMode String @default("manual") // auto | manual — order → rider dispatch mode
+}
+
+model Rider {
+  id             String               @id @default(auto()) @map("_id") @db.ObjectId
+  fullName       String
+  phone          String               @unique
+  address        String
+  bikeNumber     String?
+  cnicFrontUrl   String // base64 data URL for demo; swap for real object storage (S3/Cloud Storage) in production
+  cnicBackUrl    String
+  selfieFrontUrl String
+  selfieLeftUrl  String
+  selfieRightUrl String
+  password       String? // set once admin approves and issues credentials
+  status         String               @default("pending") // pending | approved | rejected | suspended
+  isOnline       Boolean              @default(false)
+  lastLat        Float?
+  lastLng        Float?
+  lastLocationAt DateTime?
+  otpCodeHash    String? // hashed OTP for forgot-password flow — never store plaintext
+  otpExpiresAt   DateTime?
+  createdAt      DateTime             @default(now())
+  orders         Order[]
+  sosAlerts      SOSAlert[]
+  updateRequests RiderUpdateRequest[]
+}
+
+model RiderInvite {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  token     String    @unique
+  label     String? // optional note, e.g. "Batch — July riders"
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+}
+
+model SOSAlert {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  rider        Rider     @relation(fields: [riderId], references: [id])
+  riderId      String    @db.ObjectId
+  orderId      String?   @db.ObjectId
+  lat          Float?
+  lng          Float?
+  voiceNoteUrl String? // base64 audio blob for demo; swap for object storage in production
+  status       String    @default("active") // active | resolved
+  createdAt    DateTime  @default(now())
+  resolvedAt   DateTime?
+}
+
+model Review {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  productId String   
+  rating    Int
+  comment   String
+  user_info Json?
+  images    String[]
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+}
