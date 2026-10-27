@@ -22,7 +22,7 @@ const cryptoRoutes = require('./routes/crypto.routes');
 const payoutRoutes = require('./routes/payout.routes');
 const platformSettingsRoutes = require('./routes/platformSettings.routes');
 const thirdPartyOrderRoutes = require('./routes/thirdPartyOrder.routes');
-const vendorImportRoutes = require('./routes/vendorimport.routes');
+const vendorImportRoutes = require('./routes/vendorimportroutes');
 const reviewRoutes = require('./routes/review.routes');
 const aliexpressRoutes = require('./routes/aliexpress.routes');
 
