@@ -1,4 +1,4 @@
-require('dotenv').config();
+Require('dotenv').config();
 const http = require('http');
 const express = require('express');
 const cors = require('cors');
@@ -31,6 +31,9 @@ const { errorHandler, notFound } = require('./middleware/error.middleware');
 const { initRealtime } = require('./realtime');
 
 const app = express();
+
+// Render پراکسی کے لیے یہ سیٹنگ لازمی ہے
+app.set('trust proxy', 1);
 
 const allowedOrigins = [
   process.env.CUSTOMER_URL,
