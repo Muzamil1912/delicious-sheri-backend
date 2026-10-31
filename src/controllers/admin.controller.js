@@ -25,8 +25,8 @@ async function login(req, res, next) {
     const token = signToken({ id: admin.id, username: admin.username, role: 'admin' }, '12h');
     res.cookie('ds_admin_token', token, {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'none',
+      secure: true,
       maxAge: 12 * 60 * 60 * 1000,
     });
     res.json({ admin: { id: admin.id, username: admin.username }, token });
