@@ -12,7 +12,7 @@ async function generateInviteLink(req, res, next) {
     const token = crypto.randomBytes(16).toString('hex');
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
     await prisma.riderInvite.create({ data: { token, expiresAt, label: req.body.label || null } });
-   const link = `http://localhost:5175/register/${token}`;
+    const link = `http://localhost:5175/register/${token}`;
     res.status(201).json({ link, token, expiresAt });
   } catch (err) {
     next(err);
@@ -35,7 +35,7 @@ async function listRiders(req, res, next) {
 
 async function getRider(req, res, next) {
   try {
-    const rider = await prisma.rider.findUnique({ where: { id: Number(req.params.id) } });
+    const rider = await prisma.rider.findUnique({ where: { id: req.params.id } });
     if (!rider) return res.status(404).json({ error: 'Rider not found.' });
     res.json({ rider });
   } catch (err) {
@@ -43,12 +43,9 @@ async function getRider(req, res, next) {
   }
 }
 
-// Approving issues a temporary password (shown once to the admin to relay to the rider —
-// e.g. via SMS/WhatsApp outside this system). The rider should change it on first login
-// in a fuller build; kept simple here.
 async function approveRider(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = req.params.id;
     const tempPassword = crypto.randomBytes(4).toString('hex');
     const hashed = await bcrypt.hash(tempPassword, 12);
     const rider = await prisma.rider.update({ where: { id }, data: { status: 'approved', password: hashed } });
@@ -60,7 +57,7 @@ async function approveRider(req, res, next) {
 
 async function rejectRider(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = req.params.id;
     const rider = await prisma.rider.update({ where: { id }, data: { status: 'rejected' } });
     res.json({ rider });
   } catch (err) {
@@ -69,11 +66,11 @@ async function rejectRider(req, res, next) {
 }
 
 // ---------- Order assignment / transfer ----------
-const assignSchema = z.object({ riderId: z.number().int() });
+const assignSchema = z.object({ riderId: z.string() });
 
 async function assignRider(req, res, next) {
   try {
-    const orderId = Number(req.params.orderId);
+    const orderId = req.params.orderId;
     const { riderId } = assignSchema.parse(req.body);
     const order = await prisma.order.update({
       where: { id: orderId },
@@ -87,10 +84,9 @@ async function assignRider(req, res, next) {
   }
 }
 
-// "Transfer Order" button in the SOS Room — one click reassigns to a different active rider.
 async function transferOrder(req, res, next) {
   try {
-    const orderId = Number(req.params.orderId);
+    const orderId = req.params.orderId;
     const { riderId: newRiderId } = assignSchema.parse(req.body);
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) return res.status(404).json({ error: 'Order not found.' });
@@ -111,9 +107,6 @@ async function transferOrder(req, res, next) {
   }
 }
 
-// Riders currently online, for the assign/transfer picker. Includes a
-// derived "busy" flag (has an active delivery right now) so the Admin can
-// tell Free vs Busy at a glance for manual assignment.
 async function listActiveRiders(req, res, next) {
   try {
     const riders = await prisma.rider.findMany({
@@ -132,13 +125,10 @@ async function listActiveRiders(req, res, next) {
   }
 }
 
-// Full delivery history for one rider — defensively handles a rider with zero
-// past orders (returns an empty array rather than erroring) so this never
-// blanks out the Admin panel on a rider who just joined.
 async function riderHistory(req, res, next) {
   try {
-    const riderId = Number(req.params.id);
-    if (!riderId || Number.isNaN(riderId)) return res.status(400).json({ error: 'Invalid rider id.' });
+    const riderId = req.params.id;
+    if (!riderId) return res.status(400).json({ error: 'Invalid rider id.' });
 
     const rider = await prisma.rider.findUnique({ where: { id: riderId } });
     if (!rider) return res.status(404).json({ error: 'Rider not found.' });
@@ -159,13 +149,9 @@ async function riderHistory(req, res, next) {
 }
 
 // ---------- Delivery security code ----------
-// Triggered from the "Resend Code" button the admin sees after a rider hits
-// "Request New Code / Call Admin" (see rider.controller.js requestDeliveryCodeHelp).
-// Regenerates the 4-digit code and re-sends it to the customer's phone — the
-// rider never sees the code through this path, only the customer does.
 async function resendDeliveryCode(req, res, next) {
   try {
-    const orderId = Number(req.params.orderId);
+    const orderId = req.params.orderId;
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) return res.status(404).json({ error: 'Order not found.' });
 
@@ -185,11 +171,9 @@ async function resendDeliveryCode(req, res, next) {
   }
 }
 
-// Lets the admin view the current code directly (e.g. to read it out over a
-// phone call to the rider) without regenerating it.
 async function viewDeliveryCode(req, res, next) {
   try {
-    const orderId = Number(req.params.orderId);
+    const orderId = req.params.orderId;
     const order = await prisma.order.findUnique({ where: { id: orderId }, select: { deliveryCode: true, orderNumber: true } });
     if (!order) return res.status(404).json({ error: 'Order not found.' });
     res.json(order);
@@ -214,7 +198,7 @@ async function listUpdateRequests(req, res, next) {
 
 async function approveUpdateRequest(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = req.params.id;
     const request = await prisma.riderUpdateRequest.findUnique({ where: { id } });
     if (!request) return res.status(404).json({ error: 'Request not found.' });
 
@@ -232,7 +216,7 @@ async function approveUpdateRequest(req, res, next) {
 
 async function rejectUpdateRequest(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = req.params.id;
     await prisma.riderUpdateRequest.update({ where: { id }, data: { status: 'rejected' } });
     res.json({ ok: true });
   } catch (err) {
@@ -256,7 +240,7 @@ async function listSOSAlerts(req, res, next) {
 
 async function resolveSOS(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = req.params.id;
     const alert = await prisma.sOSAlert.update({ where: { id }, data: { status: 'resolved', resolvedAt: new Date() } });
     res.json({ alert });
   } catch (err) {
@@ -264,10 +248,7 @@ async function resolveSOS(req, res, next) {
   }
 }
 
-// ---------- Admin creates a rider account directly (sets the password themselves) ----------
-// Unlike the invite-link flow (self-registration -> admin approves -> temp
-// password), this lets the admin skip straight to a working account when they
-// already know the rider in person — e.g. onboarding someone at the counter.
+// ---------- Admin creates a rider account directly ----------
 const createRiderSchema = z.object({
   fullName: z.string().min(2),
   phone: z.string().min(6),
@@ -291,8 +272,6 @@ async function createRiderDirectly(req, res, next) {
         bikeNumber: data.bikeNumber,
         password: hashed,
         status: 'approved',
-        // Placeholder values — this fast path skips CNIC/selfie verification;
-        // use the invite-link flow instead if you want that check enforced.
         cnicFrontUrl: '', cnicBackUrl: '', selfieFrontUrl: '', selfieLeftUrl: '', selfieRightUrl: '',
       },
     });
@@ -303,14 +282,11 @@ async function createRiderDirectly(req, res, next) {
   }
 }
 
-// Admin can view/reset a rider's password directly from the panel (rather
-// than only through the OTP self-service flow) — useful if a rider is locked
-// out and can't complete OTP recovery themselves.
 const setPasswordSchema = z.object({ newPassword: z.string().min(6) });
 
 async function setRiderPassword(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = req.params.id;
     const { newPassword } = setPasswordSchema.parse(req.body);
     const hashed = await bcrypt.hash(newPassword, 12);
     await prisma.rider.update({ where: { id }, data: { password: hashed } });
@@ -326,7 +302,7 @@ const bonusSchema = z.object({ amount: z.number().positive(), note: z.string().o
 
 async function sendBonus(req, res, next) {
   try {
-    const riderId = Number(req.params.id);
+    const riderId = req.params.id;
     const { amount, note } = bonusSchema.parse(req.body);
     const { creditWallet } = require('../utils/wallet');
     await creditWallet('rider', riderId, amount, note || 'Admin bonus');

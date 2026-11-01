@@ -4,9 +4,9 @@ const prisma = require('../utils/db');
 async function getSettings(req, res, next) {
   try {
     const settings = await prisma.platformSetting.upsert({
-      where: { id: 1 },
+      where: { id: "1" },
       update: {},
-      create: { id: 1 },
+      create: { id: "1" },
     });
     res.json({ settings });
   } catch (err) {
@@ -20,9 +20,9 @@ async function updateSettings(req, res, next) {
   try {
     const data = updateSchema.parse(req.body);
     const settings = await prisma.platformSetting.upsert({
-      where: { id: 1 },
+      where: { id: "1" },
       update: data,
-      create: { id: 1, ...data },
+      create: { id: "1", ...data },
     });
     res.json({ settings });
   } catch (err) {
