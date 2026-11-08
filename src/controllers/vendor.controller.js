@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const crypto = require('crypto');
 const prisma = require('../utils/db');
+const { asId } = require('../utils/ids');
 
 async function listVendors(req, res, next) {
   try {
@@ -39,7 +40,7 @@ async function createVendor(req, res, next) {
 
 async function updateVendor(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = asId(req.params.id);
     const data = vendorSchema.partial().parse(req.body);
     const vendor = await prisma.vendor.update({ where: { id }, data });
     res.json({ vendor });
@@ -53,7 +54,7 @@ async function updateVendor(req, res, next) {
 // the old one immediately since it's a straight overwrite.
 async function regenerateApiKey(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = asId(req.params.id);
     const apiKey = crypto.randomBytes(20).toString('hex');
     const vendor = await prisma.vendor.update({ where: { id }, data: { apiKey } });
     res.json({ vendor });
@@ -67,7 +68,7 @@ async function regenerateApiKey(req, res, next) {
 // ledger balance across a mode change; each mode's actions only affect its own field).
 async function setSettlementMode(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = asId(req.params.id);
     const { settlementMode } = z.object({ settlementMode: z.enum(['cash', 'khata']) }).parse(req.body);
     const vendor = await prisma.vendor.update({ where: { id }, data: { settlementMode } });
     res.json({ vendor });
@@ -85,7 +86,7 @@ const amountSchema = z.object({ amount: z.number().positive() });
 // that's money now out with the rider, awaiting reconciliation.
 async function assignCashPickup(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = asId(req.params.id);
     const { amount } = amountSchema.parse(req.body);
     const vendor = await prisma.vendor.update({ where: { id }, data: { cashFloatBalance: { decrement: amount } } });
     res.json({ vendor });
@@ -99,7 +100,7 @@ async function assignCashPickup(req, res, next) {
 // the cash float (this is base cash the rider is now holding for the business).
 async function collectCOD(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = asId(req.params.id);
     const { amount } = amountSchema.parse(req.body);
     const vendor = await prisma.vendor.update({ where: { id }, data: { cashFloatBalance: { increment: amount } } });
     res.json({ vendor });
@@ -113,7 +114,7 @@ async function collectCOD(req, res, next) {
 // Rider picks up an item without paying cash — increments what we owe the vendor.
 async function itemPickedKhata(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = asId(req.params.id);
     const { amount } = amountSchema.parse(req.body);
     const vendor = await prisma.vendor.update({ where: { id }, data: { ledgerBalance: { increment: amount } } });
     res.json({ vendor });
@@ -128,7 +129,7 @@ async function itemPickedKhata(req, res, next) {
 // further; the bank transfer itself is not something this app can perform.
 async function settleVendor(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = asId(req.params.id);
     const vendor = await prisma.vendor.update({ where: { id }, data: { ledgerBalance: 0 } });
     res.json({ vendor });
   } catch (err) {

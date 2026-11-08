@@ -12,7 +12,8 @@ async function generateInviteLink(req, res, next) {
     const token = crypto.randomBytes(16).toString('hex');
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
     await prisma.riderInvite.create({ data: { token, expiresAt, label: req.body.label || null } });
-    const link = `http://localhost:5175/register/${token}`;
+    const riderBase = (process.env.RIDER_URL || 'https://delicious-sheri-riders.web.app').replace(/\/$/, '');
+    const link = `${riderBase}/register/${token}`;
     res.status(201).json({ link, token, expiresAt });
   } catch (err) {
     next(err);

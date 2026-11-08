@@ -5,37 +5,33 @@ const { generateDeliveryCode } = require('../utils/codes');
 const { creditWallet } = require('../utils/wallet');
 const { tryAutoAssign } = require('../utils/autoAssign');
 const { createThirdPartyOrdersForOrder } = require('./thirdPartyOrder.controller');
+const { asId } = require('../utils/ids');
 
 const itemSchema = z.object({
-  productId: z.number().int(),
-  quantity: z.number().int().positive(),
+  productId: z.union([z.string().min(1), z.number()]).transform((v) => String(v)),
+  quantity: z.preprocess((val) => Number(val), z.number().int().positive()),
 });
 
 const createOrderSchema = z.object({
   items: z.array(itemSchema).min(1),
   shippingAddress: z.string().min(5),
   city: z.string().min(2),
-  area: z.string().optional(),     // mohalla / neighborhood — optional, nationwide addresses vary
-  street: z.string().optional(),   // gali / street — optional
-  isRural: z.boolean().optional(), // customer flags a village/dehat address with no formal street grid
+  area: z.string().optional().nullable(),
+  street: z.string().optional().nullable(),
+  isRural: z.boolean().optional(),
   paymentMethod: z.enum(['visa', 'mastercard', 'debit_card', 'easypaisa', 'jazzcash', 'sadapay', 'paypal', 'payoneer', 'bitcoin', 'cod']),
   guestName: z.string().optional(),
   guestEmail: z.string().email().optional(),
   guestPhone: z.string().optional(),
+  paymentDetails: z.any().optional(),
 });
 
-const DELIVERY_FEE = 200; // flat local-rider fee; swap for a real distance-based calculation later
-
-// Our own bakery's home city — used as the "vendor city" for any item that
-// isn't tied to a third-party Vendor record. Anywhere nationwide that matches
-// this gets a local rider; anywhere else automatically gets a courier.
+const DELIVERY_FEE = 200;
 const STORE_CITY = process.env.STORE_CITY || 'Karachi';
 const COURIERS = ['TCS', 'Leopards Courier', 'Trax'];
 const CARGO_BASE_FEE = 150;
 const CARGO_RATE_PER_KG = 120;
 
-// Creates an order in "pending" payment state. The actual payment is confirmed
-// separately via /api/payments/initiate + the gateway's webhook (see payment.controller.js).
 async function createOrder(req, res, next) {
   try {
     const data = createOrderSchema.parse(req.body);
@@ -72,18 +68,7 @@ async function createOrder(req, res, next) {
       };
     });
 
-    // Brand context for the whole order — themes the Rider Portal for whoever
-    // delivers it. Simplification: an order carrying any "general" marketplace
-    // item is treated as a "general" order overall; a bakery-only order stays
-    // "bakery". (Genuinely mixed-brand baskets could instead be split into two
-    // orders — worth revisiting if that becomes a real need.)
     const brandType = products.some((p) => p.brandType === 'general') ? 'general' : 'bakery';
-
-    // Same-city vs cross-city: compare the customer's city against each
-    // item's effective vendor city (the linked Vendor's city, or our own
-    // STORE_CITY for bakery items with no vendor). Any mismatch routes the
-    // whole order to courier shipping — a rider can't split one delivery run
-    // across two cities.
     const isCrossCity = products.some((p) => (p.vendor?.city || STORE_CITY) !== data.city);
 
     let shippingMethod = 'local_rider';
@@ -92,7 +77,7 @@ async function createOrder(req, res, next) {
 
     if (isCrossCity) {
       shippingMethod = 'courier';
-      deliveryFee = 0; // replaced by cargoFee below, not a local rider fee
+      deliveryFee = 0;
       const weightKg = totalWeightGrams / 1000;
       const cargoFee = Math.round(CARGO_BASE_FEE + weightKg * CARGO_RATE_PER_KG);
       const courierName = COURIERS[Math.floor(Math.random() * COURIERS.length)];
@@ -136,7 +121,6 @@ async function createOrder(req, res, next) {
         include: { items: true },
       });
 
-      // Reserve stock immediately to avoid overselling while payment is pending.
       for (const item of orderItemsData) {
         await tx.product.update({
           where: { id: item.productId },
@@ -149,14 +133,8 @@ async function createOrder(req, res, next) {
 
     res.status(201).json({ order });
 
-    // Create per-vendor fulfillment records + notify vendors of any
-    // dropshipped items in this order — runs for every order regardless of
-    // payment method, since the vendor needs shipping details either way.
     createThirdPartyOrdersForOrder(order.id).catch(() => {});
 
-    // COD orders don't wait on a payment webhook to be "confirmed" — try
-    // auto-dispatch right away if that mode is on. Fired after the response
-    // is sent so a slow rider lookup never delays the customer's checkout.
     if (order.paymentMethod === 'cod') {
       tryAutoAssign(order.id).catch(() => {});
     }
@@ -177,8 +155,6 @@ async function getOrderByNumber(req, res, next) {
     });
     if (!order) return res.status(404).json({ error: 'Order not found.' });
 
-    // Customer only ever sees dispatch/tracking + the vendor's public name/logo —
-    // never cost/margin breakdown or the vendor's integration secrets.
     const thirdPartyOrders = order.thirdPartyOrders.map((tp) => ({
       vendorName: tp.vendor.name,
       vendorLogoUrl: tp.vendor.logoUrl,
@@ -206,13 +182,9 @@ async function myOrders(req, res, next) {
   }
 }
 
-// Customer-initiated cancellation. Only allowed before a rider has picked the
-// order up. Money is never sent back externally — it's converted to Customer
-// App Wallet credit (per the wallet spec), and only for logged-in customers
-// who actually paid online; guest/COD orders have nothing to refund.
 async function cancelOrder(req, res, next) {
   try {
-    const orderId = Number(req.params.id);
+    const orderId = asId(req.params.id);
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) return res.status(404).json({ error: 'Order not found.' });
     if (req.user && order.userId !== req.user.id) {
@@ -234,7 +206,6 @@ async function cancelOrder(req, res, next) {
   }
 }
 
-// ---------- Admin ----------
 async function adminListOrders(req, res, next) {
   try {
     const orders = await prisma.order.findMany({
@@ -255,7 +226,7 @@ const statusSchema = z.object({
 
 async function updateOrderStatus(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = asId(req.params.id);
     const data = statusSchema.parse(req.body);
     const order = await prisma.order.update({ where: { id }, data });
     res.json({ order });
@@ -265,12 +236,11 @@ async function updateOrderStatus(req, res, next) {
   }
 }
 
-// Admin function to delete an order
 async function deleteOrder(req, res, next) {
   try {
     const { id } = req.params;
     await prisma.order.delete({
-      where: { id: Number(id) },
+      where: { id: asId(id) },
     });
     res.json({ success: true, message: 'Order deleted successfully' });
   } catch (err) {

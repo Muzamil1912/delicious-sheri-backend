@@ -1,6 +1,8 @@
 const bcrypt = require('bcryptjs');
 const { z } = require('zod');
 const prisma = require('../utils/db');
+const { authCookieOptions } = require('../utils/cookies');
+const { asId } = require('../utils/ids');
 const { signToken } = require('../utils/jwt');
 const { emitToAdmin, emitToOrderWatchers } = require('../realtime');
 const { generateOTP, generateDeliveryCode } = require('../utils/codes');
@@ -50,7 +52,7 @@ async function register(req, res, next) {
 // Riders poll this (or check after clicking an emailed/SMS'd link) to see if they've been approved yet.
 async function checkStatus(req, res, next) {
   try {
-    const rider = await prisma.rider.findUnique({ where: { id: Number(req.params.id) } });
+    const rider = await prisma.rider.findUnique({ where: { id: asId(req.params.id) } });
     if (!rider) return res.status(404).json({ error: 'Application not found.' });
     res.json({ status: rider.status });
   } catch (err) {
@@ -72,12 +74,7 @@ async function login(req, res, next) {
     if (!match) return res.status(401).json({ error: 'Invalid credentials.' });
 
     const token = signToken({ id: rider.id, phone: rider.phone, role: 'rider' }, '24h');
-    res.cookie('ds_rider_token', token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 24 * 60 * 60 * 1000,
-    });
+    res.cookie('ds_rider_token', token, authCookieOptions(24 * 60 * 60 * 1000));
     res.json({ rider: { id: rider.id, fullName: rider.fullName }, token });
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors[0].message });
@@ -86,7 +83,7 @@ async function login(req, res, next) {
 }
 
 function logout(req, res) {
-  res.clearCookie('ds_rider_token');
+  res.clearCookie('ds_rider_token', authCookieOptions());
   res.json({ ok: true });
 }
 
@@ -275,7 +272,7 @@ async function setOnlineStatus(req, res, next) {
 // gives the popup+sound alert flow something real to call.
 async function acceptOrder(req, res, next) {
   try {
-    const orderId = Number(req.params.orderId);
+    const orderId = asId(req.params.orderId);
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order || order.riderId !== req.rider.id) return res.status(404).json({ error: 'Order not found for this rider.' });
     res.json({ order });
@@ -289,7 +286,7 @@ async function acceptOrder(req, res, next) {
 // hand it to someone else.
 async function rejectOrder(req, res, next) {
   try {
-    const orderId = Number(req.params.orderId);
+    const orderId = asId(req.params.orderId);
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order || order.riderId !== req.rider.id) return res.status(404).json({ error: 'Order not found for this rider.' });
 
@@ -306,7 +303,7 @@ async function rejectOrder(req, res, next) {
 
 async function markArrived(req, res, next) {
   try {
-    const orderId = Number(req.params.orderId);
+    const orderId = asId(req.params.orderId);
     const order = await prisma.order.update({ where: { id: orderId }, data: { riderArrivedAt: new Date() } });
     emitToAdmin('order:status-changed', { orderId: order.id, orderNumber: order.orderNumber, event: 'rider-arrived' });
     emitToOrderWatchers(order.orderNumber, 'order:status-changed', { orderStatus: order.orderStatus, riderArrived: true });
@@ -323,7 +320,7 @@ const proofSchema = z.object({ doorstepProofUrl: z.string().min(10) });
 // base64-in-Postgres works for a demo/MVP but won't scale well for video files.
 async function submitDoorstepProof(req, res, next) {
   try {
-    const orderId = Number(req.params.orderId);
+    const orderId = asId(req.params.orderId);
     const { doorstepProofUrl } = proofSchema.parse(req.body);
     const order = await prisma.order.update({ where: { id: orderId }, data: { doorstepProofUrl } });
     res.json({ order });
@@ -340,7 +337,7 @@ async function submitDoorstepProof(req, res, next) {
 // see verifyDeliveryCode() below.
 async function confirmDelivered(req, res, next) {
   try {
-    const orderId = Number(req.params.orderId);
+    const orderId = asId(req.params.orderId);
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) return res.status(404).json({ error: 'Order not found.' });
     if (!order.doorstepProofUrl) {
@@ -368,7 +365,7 @@ const verifyCodeSchema = z.object({ code: z.string().length(4) });
 
 async function verifyDeliveryCode(req, res, next) {
   try {
-    const orderId = Number(req.params.orderId);
+    const orderId = asId(req.params.orderId);
     const { code } = verifyCodeSchema.parse(req.body);
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) return res.status(404).json({ error: 'Order not found.' });
@@ -396,7 +393,7 @@ async function verifyDeliveryCode(req, res, next) {
 // it to the customer's phone.
 async function requestDeliveryCodeHelp(req, res, next) {
   try {
-    const orderId = Number(req.params.orderId);
+    const orderId = asId(req.params.orderId);
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) return res.status(404).json({ error: 'Order not found.' });
     const rider = await prisma.rider.findUnique({ where: { id: req.rider.id } });
@@ -461,7 +458,7 @@ async function myUpdateRequests(req, res, next) {
 // inventory return rather than left ambiguous.
 async function rejectAtDoorstep(req, res, next) {
   try {
-    const orderId = Number(req.params.orderId);
+    const orderId = asId(req.params.orderId);
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) return res.status(404).json({ error: 'Order not found.' });
 

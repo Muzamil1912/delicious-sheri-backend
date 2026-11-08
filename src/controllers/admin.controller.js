@@ -2,6 +2,8 @@ const bcrypt = require('bcryptjs');
 const { z } = require('zod');
 const prisma = require('../utils/db');
 const { signToken } = require('../utils/jwt');
+const { authCookieOptions } = require('../utils/cookies');
+const { asId } = require('../utils/ids');
 
 function checkGatePassphrase(req, res) {
   const { passphrase } = req.body;
@@ -23,12 +25,7 @@ async function login(req, res, next) {
     if (!match) return res.status(401).json({ error: 'Invalid admin credentials.' });
 
     const token = signToken({ id: admin.id, username: admin.username, role: 'admin' }, '12h');
-    res.cookie('ds_admin_token', token, {
-      httpOnly: true,
-      sameSite: 'none',
-      secure: true,
-      maxAge: 12 * 60 * 60 * 1000,
-    });
+    res.cookie('ds_admin_token', token, authCookieOptions(12 * 60 * 60 * 1000));
     res.json({ admin: { id: admin.id, username: admin.username }, token });
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors[0].message });
@@ -37,7 +34,7 @@ async function login(req, res, next) {
 }
 
 function logout(req, res) {
-  res.clearCookie('ds_admin_token');
+  res.clearCookie('ds_admin_token', authCookieOptions());
   res.json({ ok: true });
 }
 
@@ -72,7 +69,7 @@ async function dashboard(req, res, next) {
 
 async function updateVendor(req, res, next) {
   try {
-    const vendorId = parseInt(req.params.id, 10);
+    const vendorId = asId(req.params.id);
     const { name, city, logoUrl, webhookUrl, stripeConnectedAccountId, payoutEmail } = req.body;
 
     const vendor = await prisma.vendor.update({
@@ -95,7 +92,7 @@ async function updateVendor(req, res, next) {
 
 async function deleteVendor(req, res, next) {
   try {
-    const vendorId = parseInt(req.params.id, 10);
+    const vendorId = asId(req.params.id);
 
     // Cascade delete handles products, imported items, and third party orders
     await prisma.vendor.delete({

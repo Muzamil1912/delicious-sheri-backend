@@ -26,6 +26,7 @@ const thirdPartyOrderRoutes = require('./routes/thirdPartyOrder.routes');
 const vendorImportRoutes = require('./routes/vendorimport.routes');
 const reviewRoutes = require('./routes/review.routes');
 const aliexpressRoutes = require('./routes/aliexpress.routes');
+const supportRoutes = require('./routes/support.routes');
 
 const { errorHandler, notFound } = require('./middleware/error.middleware');
 const { initRealtime } = require('./realtime');
@@ -35,16 +36,40 @@ const app = express();
 // Render پراکسی کے لیے یہ سیٹنگ لازمی ہے
 app.set('trust proxy', 1);
 
+const defaultOrigins = [
+  'https://delicious-sheri.web.app',
+  'https://delicious-sheri.firebaseapp.com',
+  'https://delicious-sheri-admin.web.app',
+  'https://delicious-sheri-admin.firebaseapp.com',
+  'https://delicious-sheri-riders.web.app',
+  'https://delicious-sheri-riders.firebaseapp.com',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+  'http://127.0.0.1:5175',
+];
+
 const allowedOrigins = [
   process.env.CUSTOMER_URL,
   process.env.ADMIN_URL,
-  process.env.RIDER_URL
+  process.env.RIDER_URL,
+  process.env.FRONTEND_URL,
+  ...(process.env.EXTRA_CORS_ORIGINS || '').split(',').map((s) => s.trim()),
+  ...defaultOrigins,
 ].filter(Boolean);
 
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 app.use(
   cors({
-    origin: allowedOrigins.length ? allowedOrigins : true,
+    origin(origin, callback) {
+      // Allow non-browser / same-origin requests (no Origin header)
+      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(null, false);
+    },
     credentials: true,
   })
 );
@@ -80,6 +105,7 @@ app.use('/api/third-party-orders', thirdPartyOrderRoutes);
 app.use('/api/admin/vendor-import', authLimiter, vendorImportRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/aliexpress', aliexpressRoutes);
+app.use('/api/support', supportRoutes);
 app.use('/api/delivery-boy', deliveryBoyRoutes);
 app.use('/api/vendor', vendorRoutes);
 app.use('/api/vendor-import', vendorImportRoutes);

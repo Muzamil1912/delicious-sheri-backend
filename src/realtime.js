@@ -19,10 +19,25 @@ const { Server } = require('socket.io');
 let io = null;
 
 function initRealtime(httpServer) {
-  const allowedOrigins = [process.env.CUSTOMER_URL, process.env.ADMIN_URL, process.env.RIDER_URL].filter(Boolean);
+  const allowedOrigins = [
+    process.env.CUSTOMER_URL,
+    process.env.ADMIN_URL,
+    process.env.RIDER_URL,
+    process.env.FRONTEND_URL,
+    ...(process.env.EXTRA_CORS_ORIGINS || '').split(',').map((s) => s.trim()),
+    'https://delicious-sheri.web.app',
+    'https://delicious-sheri.firebaseapp.com',
+    'https://delicious-sheri-admin.web.app',
+    'https://delicious-sheri-admin.firebaseapp.com',
+    'https://delicious-sheri-riders.web.app',
+    'https://delicious-sheri-riders.firebaseapp.com',
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175',
+  ].filter(Boolean);
   io = new Server(httpServer, {
     cors: {
-      origin: allowedOrigins.length ? allowedOrigins : true,
+      origin: allowedOrigins,
       credentials: true,
     },
   });

@@ -1,10 +1,11 @@
 const { z } = require('zod');
 const prisma = require('../utils/db');
+const { asId } = require('../utils/ids');
 const { computePrice } = require('../utils/pricing');
 
 async function fetchCatalog(req, res, next) {
   try {
-    const vendorId = Number(req.params.vendorId);
+    const vendorId = asId(req.params.vendorId);
     const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
     if (!vendor) return res.status(404).json({ error: 'Vendor not found.' });
 
@@ -59,7 +60,7 @@ async function fetchCatalog(req, res, next) {
 
 async function listPendingImports(req, res, next) {
   try {
-    const vendorId = Number(req.params.vendorId);
+    const vendorId = asId(req.params.vendorId);
     const items = await prisma.vendorImportItem.findMany({ 
       where: { vendorId, status: 'fetched' }, 
       orderBy: { createdAt: 'desc' } 
@@ -103,7 +104,7 @@ async function importSelected(req, res, next) {
           imageUrl: item.imageUrl || '📦',
           stock: 20,
           brandType: 'general',
-          vendorId: Number(item.vendorId),
+          vendorId: asId(item.vendorId),
           externalSku: item.externalSku,
           categoryId: categoryId || null,
         },
@@ -120,7 +121,7 @@ async function importSelected(req, res, next) {
 
 async function getVendorProducts(req, res, next) {
   try {
-    const vendorId = Number(req.params.vendorId);
+    const vendorId = asId(req.params.vendorId);
     const products = await prisma.product.findMany({
       where: { vendorId },
       orderBy: { createdAt: 'desc' },

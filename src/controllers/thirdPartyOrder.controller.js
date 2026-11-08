@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const prisma = require('../utils/db');
+const { asId } = require('../utils/ids');
 const { computePrice } = require('../utils/pricing');
 const { notifyVendorOfOrder } = require('../utils/vendorNotify');
 const stripeConnect = require('../services/payments/stripeConnect');
@@ -36,7 +37,7 @@ async function createThirdPartyOrdersForOrder(orderId) {
     }
 
     const tpOrder = await prisma.thirdPartyOrder.create({
-      data: { orderId: order.id, vendorId: Number(vendorId), costTotal, marginTotal },
+      data: { orderId: order.id, vendorId: asId(vendorId), costTotal, marginTotal },
     });
 
     notifyVendorOfOrder(tpOrder.id).catch(() => {});
@@ -96,7 +97,7 @@ const trackingSchema = z.object({
 
 async function updateTracking(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = asId(req.params.id);
     const data = trackingSchema.parse(req.body);
     const record = await prisma.thirdPartyOrder.update({ where: { id }, data });
     res.json({ record });
@@ -113,7 +114,7 @@ const disputeSchema = z.object({
 
 async function updateDispute(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = asId(req.params.id);
     const data = disputeSchema.parse(req.body);
     const record = await prisma.thirdPartyOrder.update({ where: { id }, data });
     res.json({ record });
@@ -130,7 +131,7 @@ const simulatePriceSchema = z.object({ newCostPrice: z.number().positive() });
 
 async function simulatePriceUpdate(req, res, next) {
   try {
-    const productId = Number(req.params.productId);
+    const productId = asId(req.params.productId);
     const { newCostPrice } = simulatePriceSchema.parse(req.body);
     const product = await prisma.product.findUnique({ where: { id: productId } });
     if (!product) return res.status(404).json({ error: 'Product not found.' });

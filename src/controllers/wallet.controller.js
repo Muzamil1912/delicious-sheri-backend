@@ -1,5 +1,6 @@
 const prisma = require('../utils/db');
 const { getOrCreateWallet } = require('../utils/wallet');
+const { asId } = require('../utils/ids');
 
 // ---------- Customer-facing ----------
 async function myWallet(req, res, next) {
@@ -28,7 +29,7 @@ async function listWallets(req, res, next) {
 
 async function getWalletTransactions(req, res, next) {
   try {
-    const walletId = Number(req.params.id);
+    const walletId = asId(req.params.id);
     const transactions = await prisma.walletTransaction.findMany({
       where: { walletId },
       orderBy: { createdAt: 'desc' },

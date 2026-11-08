@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const prisma = require('../utils/db');
+const { asId } = require('../utils/ids');
 
 // Customer submits their transaction hash after sending BTC to the admin's
 // wallet address — this does NOT verify on-chain (no blockchain node/API
@@ -52,7 +53,7 @@ async function listTransactions(req, res, next) {
 
 async function approveTransaction(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = asId(req.params.id);
     const tx = await prisma.cryptoTransaction.findUnique({ where: { id } });
     if (!tx) return res.status(404).json({ error: 'Transaction not found.' });
 
@@ -68,7 +69,7 @@ async function approveTransaction(req, res, next) {
 
 async function rejectTransaction(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = asId(req.params.id);
     await prisma.cryptoTransaction.update({ where: { id }, data: { status: 'rejected' } });
     res.json({ ok: true });
   } catch (err) {

@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const prisma = require('../utils/db');
 const { creditWallet } = require('../utils/wallet');
+const { asId } = require('../utils/ids');
 
 // "Held Balance" is computed, not stored — it's every paid order's total,
 // minus whatever's already been refunded, minus whatever's already been
@@ -31,7 +32,7 @@ async function getHeldBalance(req, res, next) {
 // section for why that step can't be automated by this codebase alone).
 async function refundOrder(req, res, next) {
   try {
-    const orderId = Number(req.params.orderId);
+    const orderId = asId(req.params.orderId);
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) return res.status(404).json({ error: 'Order not found.' });
     if (order.paymentStatus !== 'paid') return res.status(400).json({ error: 'Only paid orders can be refunded.' });
@@ -83,7 +84,7 @@ async function listPayouts(req, res, next) {
 
 async function markPayoutCompleted(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const id = asId(req.params.id);
     const payout = await prisma.payout.update({ where: { id }, data: { status: 'completed' } });
     res.json({ payout });
   } catch (err) {

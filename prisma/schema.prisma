@@ -130,17 +130,44 @@ model OrderItem {
 }
 
 model Banner {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  title     String
-  subtitle  String?
-  ctaLabel  String? // e.g. "Shop Now"
-  ctaLink   String? // e.g. "/shop"
-  emoji     String   @default("🎉") // placeholder visual; swap for a real imageUrl field if hosting images
-  imageUrl  String?
-  isActive  Boolean  @default(true)
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  title            String
+  subtitle         String?
+  ctaLabel         String? // e.g. "Shop Now"
+  ctaLink          String? // e.g. "/shop"
+  emoji            String   @default("🎉")
+  imageUrl         String?
+  isActive         Boolean  @default(true)
+  sortOrder        Int      @default(0)
+  platform         String?
+  page             String?
+  adSlotName       String?
+  adNetwork        String?
+  adSize           String?
+  width            String?
+  height           String?
+  posX             String?
+  posY             String?
+  destinationUrl   String?
+  adSenseClientId  String?
+  adSenseSlotId    String?
+  adLink           String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model SupportTicket {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  email       String
+  subject     String
+  message     String
+  status      String   @default("open") // open | in_progress | resolved | closed
+  adminReply  String?
+  userId      String?  @db.ObjectId
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  repliedAt   DateTime?
 }
 
 model Vendor {

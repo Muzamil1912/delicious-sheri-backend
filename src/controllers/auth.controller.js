@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const { z } = require('zod');
 const prisma = require('../utils/db');
 const { signToken } = require('../utils/jwt');
+const { authCookieOptions } = require('../utils/cookies');
 
 const signupSchema = z.object({
   name: z.string().min(2),
@@ -22,7 +23,7 @@ async function signup(req, res, next) {
     });
 
     const token = signToken({ id: user.id, email: user.email, role: 'customer' });
-    res.cookie('ds_token', token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+    res.cookie('ds_token', token, authCookieOptions(7 * 24 * 60 * 60 * 1000));
     res.status(201).json({ user: { id: user.id, name: user.name, email: user.email }, token });
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors[0].message });
@@ -42,7 +43,7 @@ async function login(req, res, next) {
     if (!match) return res.status(401).json({ error: 'Invalid email or password.' });
 
     const token = signToken({ id: user.id, email: user.email, role: 'customer' });
-    res.cookie('ds_token', token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+    res.cookie('ds_token', token, authCookieOptions(7 * 24 * 60 * 60 * 1000));
     res.json({ user: { id: user.id, name: user.name, email: user.email }, token });
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors[0].message });
@@ -60,7 +61,7 @@ async function me(req, res) {
 }
 
 function logout(req, res) {
-  res.clearCookie('ds_token');
+  res.clearCookie('ds_token', authCookieOptions());
   res.json({ ok: true });
 }
 
@@ -84,4 +85,34 @@ async function aliexpressCallback(req, res, next) {
   }
 }
 
-module.exports = { signup, login, me, logout, aliexpressAuth, aliexpressCallback };
+const socialSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).optional(),
+  provider: z.string().optional(),
+  uid: z.string().optional(),
+});
+
+async function socialLogin(req, res, next) {
+  try {
+    const data = socialSchema.parse(req.body);
+    let user = await prisma.user.findUnique({ where: { email: data.email } });
+    if (!user) {
+      const hashed = await bcrypt.hash(`social:${data.uid || data.email}:${Date.now()}`, 12);
+      user = await prisma.user.create({
+        data: {
+          name: data.name || data.email.split('@')[0],
+          email: data.email,
+          password: hashed,
+        },
+      });
+    }
+    const token = signToken({ id: user.id, email: user.email, role: 'customer' });
+    res.cookie('ds_token', token, authCookieOptions(7 * 24 * 60 * 60 * 1000));
+    res.json({ user: { id: user.id, name: user.name, email: user.email }, token, provider: data.provider || 'social' });
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors[0].message });
+    next(err);
+  }
+}
+
+module.exports = { signup, login, me, logout, socialLogin, aliexpressAuth, aliexpressCallback };

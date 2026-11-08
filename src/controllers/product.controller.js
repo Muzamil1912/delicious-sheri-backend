@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const prisma = require('../utils/db');
+const { asId } = require('../utils/ids');
 const { computePrice } = require('../utils/pricing');
 
 // ---------- Public ----------
@@ -17,6 +18,7 @@ async function listProducts(req, res, next) {
     const where = { isActive: true };
     if (category) where.category = { slug: category };
     if (featured === 'true') where.isFeatured = true;
+    // Prisma MongoDB supports contains but not mode:'insensitive'
     if (search) where.name = { contains: search };
     if (brand) where.brandType = brand;
 
