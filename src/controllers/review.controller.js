@@ -83,6 +83,12 @@ exports.deleteReview = async (req, res) => {
       where: { id }
     });
 
+    // Real-time: Emit socket event so Customer Web removes it instantly without refreshing
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('reviewDeleted', id);
+    }
+
     res.status(200).json({ success: true, message: 'Review deleted successfully.' });
   } catch (error) {
     console.error("Error deleting review:", error);
